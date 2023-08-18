@@ -2,10 +2,18 @@
 
 require 'optparse'
 require 'colorize'
+require 'yaml'
 require_relative 'b.structure.rb'
 
 def comma n
   n.to_s.reverse.gsub(/\d{3}(?!$)/, '\&,').reverse
+end
+
+def save_yaml(object:, filename:)
+  filename = filename.sub(/\.ya?ml$/i, '') + '.yaml'
+  open(filename, 'w') do |fo|
+    fo.write YAML.dump object
+  end
 end
 
 class FD < B::Structure
@@ -69,13 +77,16 @@ class FD < B::Structure
     x.zero? ? @name <=> o.name : x
   end
 
-  def serialize
-    self.to_hash
-
+  def to_hash
+    {
+      name: @name,
+      size: @size,
+      children: @children&.map(&:to_hash),
+    }
   end
 
   def save filename
-    fo = open filename, 'w'
+    save_yaml object: self.to_hash, filename: filename
   end
 
   def inspect indent: 0
@@ -97,6 +108,7 @@ end
 option = { }
 o = OptionParser.new
 o.on('-m', '--monochrome', 'no colorize')
+o.on('-s filename', '--serialize', Array, 'e.g.) -s file1,file2')
 o.parse! ARGV, into: option
 
 if option[:monochrome]
@@ -105,12 +117,20 @@ end
 
 case ARGV.size
 when 1
-  p FD.new.scan ARGV.first
+  o = FD.new.scan ARGV.first
+  p o
+  if option[:serialize]
+    o.save option[:serialize][0]
+  end
 when 2
   a = FD.new.scan ARGV[0]
   b = FD.new.scan ARGV[1]
   puts a.csub(b).map(&:inspect)
   puts
+  if option[:serialize]
+    a.save option[:serialize][0]
+    b.save option[:serialize][1]
+  end
 else
   puts "usage:"
   puts "  #{$0} [file1] [(file2)]"
