@@ -9,17 +9,36 @@ def comma n
   n.to_s.reverse.gsub(/\d{3}(?!$)/, '\&,').reverse
 end
 
-def save_yaml(object:, filename:)
-  filename = filename.sub(/\.ya?ml$/i, '') + '.yaml'
-  open(filename, 'w') do |fo|
-    fo.write YAML.dump object
-  end
-end
-
 class FD < B::Structure
   attr_accessor :name
   attr_accessor :children
   attr_accessor :size
+
+  def self.load filename
+    self.new(**YAML.load_file(filename))
+  end
+
+  def initialize **hash
+    @name     = hash[:name]
+    @size     = hash[:size]
+    @children = hash[:children]&.map{ self.class.new(**_1) }
+  end
+
+  # このノード以下の(自身を含む)ファイルの合計
+  def cf
+    @cf ||= @children&.sum(&:cf) || 1
+  end
+
+  # このノード以下の(自身を含む)ファイルサイズの合計
+  def cs
+    @cs ||= @children&.sum(&:cs) || @size
+  end
+
+  # このノード以下の(自身を含む)ディレクトリの合計
+  def cd
+    @cd ||= (@children&.sum(&:cd) &.+ 1) || 0
+  end
+
   def directory?
     not @children.nil?
   end
@@ -86,7 +105,16 @@ class FD < B::Structure
   end
 
   def save filename
-    save_yaml object: self.to_hash, filename: filename
+    filename = filename.sub(/\.ya?ml$/i, '') + '.yaml'
+    open(filename, 'w') do |fo|
+      fo.write YAML.dump self.to_hash
+    end
+  end
+
+  def from_hash h
+    @name = h[:name]
+    @size = h[:size]
+    @children = h[:children].map
   end
 
   def inspect indent: 0
@@ -96,6 +124,9 @@ class FD < B::Structure
       for c in @children
         s += c.inspect(indent: indent+2)
       end
+      s += "#{' ' * (indent)}|       dirs: #{comma cd}\n".colorize :red
+      s += "#{' ' * (indent)}|      files: #{comma cf}\n".colorize :red
+      s += "#{' ' * (indent)}| total size: #{comma cs}\n".colorize :red
     else
       s += "#{@name.colorize :cyan} #{comma(@size).colorize :blue}\n"
     end
@@ -108,7 +139,8 @@ end
 option = { }
 o = OptionParser.new
 o.on('-m', '--monochrome', 'no colorize')
-o.on('-s filename', '--serialize', Array, 'e.g.) -s file1,file2')
+o.on('-s filename', '--serialize', 'serialize and save')
+o.on('-d filename(s)', '--deserialize', Array, 'load file(s)')
 o.parse! ARGV, into: option
 
 if option[:monochrome]
@@ -116,21 +148,27 @@ if option[:monochrome]
 end
 
 case ARGV.size
+when 0
+  if option[:deserialize]
+    option[:deserialize][0]
+    option[:deserialize][1]
+  end
 when 1
-  o = FD.new.scan ARGV.first
-  p o
-  if option[:serialize]
-    o.save option[:serialize][0]
+  if File.directory? ARGV.first
+    o = FD.new.scan ARGV.first
+    if option[:serialize]
+      o.save option[:serialize]
+    else
+      p o
+    end
+  else
+    p FD.load ARGV.first
   end
 when 2
   a = FD.new.scan ARGV[0]
   b = FD.new.scan ARGV[1]
   puts a.csub(b).map(&:inspect)
   puts
-  if option[:serialize]
-    a.save option[:serialize][0]
-    b.save option[:serialize][1]
-  end
 else
   puts "usage:"
   puts "  #{$0} [file1] [(file2)]"
