@@ -14,28 +14,46 @@ class FD < B::Structure
   attr_accessor :children
   attr_accessor :size
 
-  def self.from_hash **hash
-    new = allocate
-    new.name     = hash[:name]
-    new.size     = hash[:size]
-    new.children = hash[:children]&.map{ from_hash(**_1) }
-    return new
+  def self.from_hash(...)
+    allocate.from_hash(...)
   end
 
-  def self.load filename
-    from_hash(**YAML.load_file(filename))
+  def self.load_file(...)
+    allocate.load_file(...)
   end
 
-  def self.scan d
-    allocate.scan d
+  def self.scan_directory(...)
+    allocate.scan_directory(...)
   end
 
   #-----
 
-  def from_hash h
-    @name = h[:name]
-    @size = h[:size]
-    @children = h[:children].map
+  def initialize something=nil
+    case something
+    when nil
+    # make empty object
+    when Hash
+      from_hash something
+    when String
+      if File.directory? something
+        self.scan_directory something # directory
+      else
+        self.load_file something # YAML file
+      end
+    else
+      raise TypeError, "don't know how to handle #{something.class}"
+    end
+  end
+
+  def from_hash hash
+    @name     = hash[:name]
+    @size     = hash[:size]
+    @children = hash[:children]&.map{ FD.from_hash(**_1) }
+    return self
+  end
+
+  def load_file filename
+    from_hash(**YAML.load_file(filename))
   end
 
   def to_hash
@@ -51,16 +69,19 @@ class FD < B::Structure
     open(filename, 'w') do |fo|
       fo.write YAML.dump to_hash
     end
+    return filename
   end
 
-  def scan d
+  def scan_directory d
     @name = File.basename(d).unicode_normalize(:nfc)
     @children = [ ]
     for i in Dir.children d
       di = File.join d, i
       @children.push(File.directory?(di) ?
-                       FD.new.scan(di)
-                     : FD.new(name: i.unicode_normalize(:nfc), size: File.size(di)))
+                       FD.scan_directory(di)
+                     : FD.from_hash(
+                         name: i.unicode_normalize(:nfc),
+                         size: File.size(di)))
     end
     @children.sort!
     return self
@@ -156,19 +177,17 @@ end
 
 case ARGV.size
 when 1
-  if File.directory? ARGV.first
-    o = FD.new.scan ARGV.first
-    if option[:serialize]
-      o.save option[:serialize]
-    else
-      p o
-    end
+  root = FD.new ARGV.first
+  if option[:serialize]
+    name = root.save option[:serialize]
+    puts ARGV.first
+    puts "Saved: #{name}"
   else
-    p FD.load ARGV.first
+    p root
   end
 when 2
-  a = FD.scan ARGV[0]
-  b = FD.scan ARGV[1]
+  a = FD.new ARGV[0]
+  b = FD.new ARGV[1]
   puts a.csub(b).map(&:inspect)
   puts
 else
