@@ -14,14 +14,58 @@ class FD < B::Structure
   attr_accessor :children
   attr_accessor :size
 
-  def self.load filename
-    self.new(**YAML.load_file(filename))
+  def self.from_hash **hash
+    new = allocate
+    new.name     = hash[:name]
+    new.size     = hash[:size]
+    new.children = hash[:children]&.map{ from_hash(**_1) }
+    return new
   end
 
-  def initialize **hash
-    @name     = hash[:name]
-    @size     = hash[:size]
-    @children = hash[:children]&.map{ self.class.new(**_1) }
+  def self.load filename
+    from_hash(**YAML.load_file(filename))
+  end
+
+  def self.scan d
+    allocate.scan d
+  end
+
+  #-----
+
+  def from_hash h
+    @name = h[:name]
+    @size = h[:size]
+    @children = h[:children].map
+  end
+
+  def to_hash
+    {
+      name: @name,
+      size: @size,
+      children: @children&.map(&:to_hash),
+    }
+  end
+
+  def save filename
+    filename = filename.sub(/\.ya?ml$/i, '') + '.yaml'
+    open(filename, 'w') do |fo|
+      fo.write YAML.dump to_hash
+    end
+  end
+
+  def scan d
+    @name = File.basename(d).unicode_normalize(:nfc)
+    @children = [ ]
+    for i in Dir.children d
+      di = File.join d, i
+      @children.push(File.directory?(di) ?
+                       FD.new.scan(di)
+                     : FD.new(name: i.unicode_normalize(:nfc), size: File.size(di)))
+    end
+    @children.sort!
+    return self
+  rescue Errno::ENOTDIR
+    puts "Not a directory #{d}"
   end
 
   # このノード以下の(自身を含む)ファイルの合計
@@ -43,23 +87,8 @@ class FD < B::Structure
     not @children.nil?
   end
 
-  def scan d
-    @name = File.basename(d).unicode_normalize(:nfc)
-    @children = [ ]
-    for i in Dir.children d
-      di = File.join d, i
-      @children.push(File.directory?(di) ?
-                       FD.new.scan(di)
-                     : FD.new(name: i.unicode_normalize(:nfc), size: File.size(di)))
-    end
-    @children.sort!
-    return self
-  rescue Errno::ENOTDIR
-    puts "Not a directory #{d}"
-  end
-
   def csub other
-    unless self.directory? and other.directory?
+    unless directory? and other.directory?
       raise TypeError
     end
     left = [ ]
@@ -96,27 +125,6 @@ class FD < B::Structure
     x.zero? ? @name <=> o.name : x
   end
 
-  def to_hash
-    {
-      name: @name,
-      size: @size,
-      children: @children&.map(&:to_hash),
-    }
-  end
-
-  def save filename
-    filename = filename.sub(/\.ya?ml$/i, '') + '.yaml'
-    open(filename, 'w') do |fo|
-      fo.write YAML.dump self.to_hash
-    end
-  end
-
-  def from_hash h
-    @name = h[:name]
-    @size = h[:size]
-    @children = h[:children].map
-  end
-
   def inspect indent: 0
     s = ' ' * indent
     if directory?
@@ -140,7 +148,6 @@ option = { }
 o = OptionParser.new
 o.on('-m', '--monochrome', 'no colorize')
 o.on('-s filename', '--serialize', 'serialize and save')
-o.on('-d filename(s)', '--deserialize', Array, 'load file(s)')
 o.parse! ARGV, into: option
 
 if option[:monochrome]
@@ -148,11 +155,6 @@ if option[:monochrome]
 end
 
 case ARGV.size
-when 0
-  if option[:deserialize]
-    option[:deserialize][0]
-    option[:deserialize][1]
-  end
 when 1
   if File.directory? ARGV.first
     o = FD.new.scan ARGV.first
@@ -165,8 +167,8 @@ when 1
     p FD.load ARGV.first
   end
 when 2
-  a = FD.new.scan ARGV[0]
-  b = FD.new.scan ARGV[1]
+  a = FD.scan ARGV[0]
+  b = FD.scan ARGV[1]
   puts a.csub(b).map(&:inspect)
   puts
 else
