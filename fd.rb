@@ -167,12 +167,18 @@ end
 
 option = { }
 o = OptionParser.new
-o.on('-m', '--monochrome', 'no colorize')
-o.on('-s filename', '--serialize', 'serialize and save')
+o.on('-m',          '--monochrome', 'no colorize')
+o.on('-s filename', '--serialize',  'serialize and save')
+o.on('-i',          '--irb',        'irb')
 o.parse! ARGV, into: option
 
 if option[:monochrome]
   String.disable_colorization = true
+end
+
+if option[:irb]
+  binding.irb
+  exit
 end
 
 case ARGV.size
