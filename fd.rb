@@ -3,13 +3,12 @@
 require 'optparse'
 require 'colorize'
 require 'yaml'
-require_relative 'b.structure.rb'
 
 def comma n
   n.to_s.reverse.gsub(/\d{3}(?!$)/, '\&,').reverse
 end
 
-class FD < B::Structure
+class FD
   attr_accessor :name
   attr_accessor :children
   attr_accessor :size
