@@ -14,6 +14,16 @@ class FD < B::Structure
   attr_accessor :children
   attr_accessor :size
 
+  @@show_total = false
+
+  def self.show_total
+    @@show_total
+  end
+
+  def self.show_total= bool
+    @@show_total = bool
+  end
+
   def self.from_hash(...)
     allocate.from_hash(...)
   end
@@ -53,7 +63,11 @@ class FD < B::Structure
   end
 
   def load_file filename
-    from_hash(**YAML.load_file(filename))
+    data = YAML.load_file(filename)
+    from_hash(**data)
+  rescue TypeError
+    STDERR.puts "it may not be a YAML file: #{filename}"
+    raise
   end
 
   def to_hash
@@ -89,6 +103,9 @@ class FD < B::Structure
     puts "Not a directory #{d}"
   end
 
+  # このプログラムにとってファイルシステムのツリーはimmutableであり
+  # あとから変更されることはない
+
   # このノード以下の(自身を含む)ファイルの合計
   def cf
     @cf ||= @children&.sum(&:cf) || 1
@@ -108,29 +125,32 @@ class FD < B::Structure
     not @children.nil?
   end
 
+  # selfとotherについて、children同士の差集合をArrayで返す
+  # 親同士のname（やsize）は見ない
+  # ディレクトリでない要素を比較しようとするとforかbsearchで例外 -> ケアしない
   def csub other
-    unless directory? and other.directory?
-      raise TypeError
-    end
-    left = [ ]
-    for i in @children
-      if i.directory?
-        o = other.children.find{ _1.directory? and _1.name==i.name }
-        if o.nil?
-          left.push i
-        else
-          sb = i.csub o
-          unless sb.empty?
-            left.push FD.new(name: i.name, children: sb)
+    rest = [ ]
+    for c in @children
+      # 名前だけを頼りに候補を探す
+      o = other.children.bsearch{ _1 >= c }
+      if c.name == o&.name
+        if c.directory? and o.directory?
+          diff = FD.new name: c.name, children: c.csub(o)
+          if not diff.children.empty?
+            rest.push diff
           end
-        end
-      else
-        unless other.children.include? i
-          left.push i
+        elsif c.directory? ^ o.directory?
+          rest.push c
+        else
+          if c.name == o.name and c.size == o.size
+            # remove
+          else
+            rest.push c
+          end
         end
       end
     end
-    left
+    rest
   end
 
   def == o
@@ -146,16 +166,28 @@ class FD < B::Structure
     x.zero? ? @name <=> o.name : x
   end
 
+  def >= o
+    (self <=> o) >= 0
+  end
+
+  def <= o
+    (self <=> o) <= 0
+  end
+
   def inspect indent: 0
     s = ' ' * indent
     if directory?
-      s += "#{@name.colorize :yellow}/\n"
+      if @name
+        s += "#{@name.colorize :yellow}/\n"
+      end
       for c in @children
         s += c.inspect(indent: indent+2)
       end
-      s += "#{' ' * (indent)}|       dirs: #{comma cd}\n".colorize :red
-      s += "#{' ' * (indent)}|      files: #{comma cf}\n".colorize :red
-      s += "#{' ' * (indent)}| total size: #{comma cs}\n".colorize :red
+      if @@show_total
+        s += "#{' ' * (indent)}|       dirs: #{comma cd}\n".colorize :red
+        s += "#{' ' * (indent)}|      files: #{comma cf}\n".colorize :red
+        s += "#{' ' * (indent)}| total size: #{comma cs}\n".colorize :red
+      end
     else
       s += "#{@name.colorize :cyan} #{comma(@size).colorize :blue}\n"
     end
@@ -170,10 +202,15 @@ o = OptionParser.new
 o.on('-m',          '--monochrome', 'no colorize')
 o.on('-s filename', '--serialize',  'serialize and save')
 o.on('-i',          '--irb',        'irb')
+o.on('-t',          '--total',      'toggle total count display')
 o.parse! ARGV, into: option
 
 if option[:monochrome]
   String.disable_colorization = true
+end
+
+if option[:total]
+  FD.show_total = !FD.show_total
 end
 
 if option[:irb]
@@ -182,24 +219,20 @@ if option[:irb]
 end
 
 case ARGV.size
-when 1
-  root = FD.new ARGV.first
-  if option[:serialize]
-    name = root.save option[:serialize]
-    puts ARGV.first
-    puts "Saved: #{name}"
-  else
-    p root
-  end
-when 2
-  a = FD.new ARGV[0]
-  b = FD.new ARGV[1]
-  puts a.csub(b).map(&:inspect)
-  puts
-else
+when 0
   puts "usage:"
-  puts "  #{$0} [file1] [(file2)]"
+  puts "  #{$0} [file1] (file2) (file3) .. "
   puts
   exit
+when 1
+  r = FD.new ARGV.first
+when 2
+  r = ARGV.inject{ FD.new children: FD.new(_1).csub(FD.new(_2)) }
 end
 
+if option[:serialize]
+  yamlfilename = r.save option[:serialize]
+  puts "Saved: #{yamlfilename}"
+else
+  p r
+end
