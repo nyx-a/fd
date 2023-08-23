@@ -147,6 +147,8 @@ class FD
             rest.push c
           end
         end
+      else
+        rest.push c
       end
     end
     FD.new name: @name, children: rest
@@ -226,6 +228,7 @@ else
   if option[:serialize]
     yamlfilename = r.save option[:serialize]
     puts "Saved: #{yamlfilename}"
+    puts
   else
     p r
   end
