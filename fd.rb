@@ -218,21 +218,17 @@ if option[:irb]
   exit
 end
 
-case ARGV.size
-when 0
+if ARGV.empty?
   puts "usage:"
   puts "  #{$0} [FD1] (FD2) (FD3) .. "
   puts
-  exit
-when 1
-  r = FD.new ARGV.first
-when 2
-  r = ARGV.inject{ FD.new(_1).csub(FD.new(_2)) }
+else
+  r = ARGV.map{ FD.new _1 }.inject(&:csub)
+  if option[:serialize]
+    yamlfilename = r.save option[:serialize]
+    puts "Saved: #{yamlfilename}"
+  else
+    p r
+  end
 end
 
-if option[:serialize]
-  yamlfilename = r.save option[:serialize]
-  puts "Saved: #{yamlfilename}"
-else
-  p r
-end
