@@ -125,8 +125,8 @@ class FD < B::Structure
     not @children.nil?
   end
 
-  # selfとotherについて、children同士の差集合をArrayで返す
-  # 親同士のname（やsize）は見ない
+  # self.children - other.children を返す
+  # other.name は見ない
   # ディレクトリでない要素を比較しようとするとforかbsearchで例外 -> ケアしない
   def csub other
     rest = [ ]
@@ -135,7 +135,7 @@ class FD < B::Structure
       o = other.children.bsearch{ _1 >= c }
       if c.name == o&.name
         if c.directory? and o.directory?
-          diff = FD.new name: c.name, children: c.csub(o)
+          diff = c.csub o
           if not diff.children.empty?
             rest.push diff
           end
@@ -150,7 +150,7 @@ class FD < B::Structure
         end
       end
     end
-    rest
+    FD.new name: @name, children: rest
   end
 
   def == o
@@ -221,13 +221,13 @@ end
 case ARGV.size
 when 0
   puts "usage:"
-  puts "  #{$0} [file1] (file2) (file3) .. "
+  puts "  #{$0} [FD1] (FD2) (FD3) .. "
   puts
   exit
 when 1
   r = FD.new ARGV.first
 when 2
-  r = ARGV.inject{ FD.new children: FD.new(_1).csub(FD.new(_2)) }
+  r = ARGV.inject{ FD.new(_1).csub(FD.new(_2)) }
 end
 
 if option[:serialize]
