@@ -131,7 +131,7 @@ class FD
   # o is other FD object
   def cfind o
     candidate = @children.bsearch{ _1 >= o }
-    if candidate.name == o.name
+    if candidate&.name&.== o.name
       candidate
     end
   end
@@ -144,8 +144,7 @@ class FD
     rest = [ ]
     for c in @children
       # 名前だけを頼りに候補を探す
-      o = other.children.bsearch{ _1 >= c }
-      if c.name == o&.name
+      if o = other.cfind(c)
         if c.directory? and o.directory?
           diff = c.csub o
           if not diff.children.empty?
@@ -167,10 +166,6 @@ class FD
 
   def == o
     @size==o.size and @name==o.name and @children==o.children
-  end
-
-  def eql? o
-    @size.eql?(o.size) and @name.eql?(o.name) and @children.eql?(o.children)
   end
 
   def <=> o
