@@ -169,7 +169,7 @@ class FD
   end
 
   def <=> o
-    x = (directory? ? 1 : -1) <=> (o.directory? ? 1 : -1)
+    x = (directory? ? -1 : 1) <=> (o.directory? ? -1 : 1)
     x.zero? ? @name <=> o.name : x
   end
 
@@ -195,7 +195,7 @@ class FD
     s = ' ' * indent
     if directory?
       if @name
-        s += "#{@name.colorize :yellow}/\n"
+        s += "#{@name.colorize :cyan}/\n"
       end
       for c in @children
         s += c.inspect(indent: indent+INDENT)
@@ -206,7 +206,7 @@ class FD
         s += "#{' ' * (indent)}| total size: #{comma cs}\n".colorize :red
       end
     else
-      s += "#{@name.colorize :cyan} #{comma(@size).colorize :blue}\n"
+      s += "#{@name.colorize :yellow} #{comma(@size).colorize :blue}\n"
     end
     return s
   end
