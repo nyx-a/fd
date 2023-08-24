@@ -4,6 +4,9 @@ require 'optparse'
 require 'colorize'
 require 'yaml'
 
+SUBTREE_INDICATOR = ':'.freeze
+INDENT            = 2
+
 def comma n
   n.to_s.reverse.gsub(/\d{3}(?!$)/, '\&,').reverse
 end
@@ -124,9 +127,19 @@ class FD
     not @children.nil?
   end
 
+  # children find
+  # o is other FD object
+  def cfind o
+    candidate = @children.bsearch{ _1 >= o }
+    if candidate.name == o.name
+      candidate
+    end
+  end
+
   # self.children - other.children を返す
   # other.name は見ない
-  # ディレクトリでない要素を比較しようとするとforかbsearchで例外 -> ケアしない
+  # ディレクトリではない要素を比較しようとすると
+  # forかbsearchで例外出る筈だがこれはケアしない
   def csub other
     rest = [ ]
     for c in @children
@@ -141,9 +154,7 @@ class FD
         elsif c.directory? ^ o.directory?
           rest.push c
         else
-          if c.name == o.name and c.size == o.size
-            # remove
-          else
+          unless c.name == o.name and c.size == o.size
             rest.push c
           end
         end
@@ -175,6 +186,16 @@ class FD
     (self <=> o) <= 0
   end
 
+  def subtree path
+    breadcrumb = path.split File::SEPARATOR
+    i = self
+    until breadcrumb.empty?
+      i = i.cfind FD.new(name: breadcrumb.shift, children: [ ])
+      # childrenに空配列与えてるのはディレクトリ判定にするため
+    end
+    return i
+  end
+
   def inspect indent: 0
     s = ' ' * indent
     if directory?
@@ -182,7 +203,7 @@ class FD
         s += "#{@name.colorize :yellow}/\n"
       end
       for c in @children
-        s += c.inspect(indent: indent+2)
+        s += c.inspect(indent: indent+INDENT)
       end
       if @@show_total
         s += "#{' ' * (indent)}|       dirs: #{comma cd}\n".colorize :red
@@ -221,16 +242,32 @@ end
 
 if ARGV.empty?
   puts "usage:"
-  puts "  #{$0} [FD1] (FD2) (FD3) .. "
+  puts "  #{$0} FD1 FD2 FD3 .. "
   puts
 else
-  r = ARGV.map{ FD.new _1 }.inject(&:csub)
+  array = [ ]
+  flag = false
+  for arg in ARGV
+    if arg == SUBTREE_INDICATOR
+      flag = true
+    else
+      if flag
+        array.push array.pop.subtree arg
+        flag = false
+      else
+        array.push FD.new arg
+      end
+    end
+  end
+
+  result = array.inject &:csub
+
   if option[:serialize]
-    yamlfilename = r.save option[:serialize]
+    yamlfilename = result.save option[:serialize]
     puts "Saved: #{yamlfilename}"
     puts
   else
-    p r
+    p result
   end
 end
 
